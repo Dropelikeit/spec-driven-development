@@ -1,0 +1,38 @@
+"skill:sdd":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'core/**'
+          - 'adapters/**'
+          - 'skills/sdd/**'
+
+"build":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'scripts/**'
+          - 'tests/**'
+
+"generated":
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'dist/**'
+          - 'plugins/**'
+
+"plugin:config":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.claude-plugin/**'
+          - '.codex-plugin/**'
+          - '.augment-plugin/**'
+          - '.junie-plugin/**'
+          - '.roo-plugin/**'
+          - '.agents/**'
+
+"documentation":
+  - changed-files:
+      - any-glob-to-any-file:
+          - '*.md'
+          - 'docs/**'
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'

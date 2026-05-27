@@ -1,0 +1,26 @@
+name: Verify build
+
+# PR sanity check: the sources must build cleanly and pass validation + smoke
+# tests. Generated artifacts (skills/, dist/, plugins/) are produced and
+# committed automatically after merge by release.yml, so contributors are NOT
+# required to build and commit them locally — this workflow therefore does not
+# enforce drift against committed outputs.
+
+on:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Build all agents
+        run: bash scripts/build.sh all
+      - name: Validate frontmatter and coverage
+        run: python3 scripts/validate.py
+      - name: Smoke test
+        run: bash tests/build_test.sh
