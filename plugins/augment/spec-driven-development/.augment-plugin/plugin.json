@@ -1,11 +1,18 @@
 {
   "name": "spec-driven-development",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Spec-Driven Development (SDD) — a structured, specification-first workflow for planning and executing software features. Covers five phases: initialize, specify, plan, task, and execute. Includes Graphify integration for knowledge-graph-aware codebase navigation.",
   "author": {
     "name": "René Berndt @ GameFixxer",
     "url": "https://github.com/GameFixxer"
   },
-  "keywords": ["sdd", "spec", "planning", "workflow", "development", "graphify"],
+  "keywords": [
+    "sdd",
+    "spec",
+    "planning",
+    "workflow",
+    "development",
+    "graphify"
+  ],
   "skills": "./skills/"
 }
