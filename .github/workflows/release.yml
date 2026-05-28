@@ -1,0 +1,140 @@
+name: Release
+
+# Single ordered pipeline that runs after a merge to main:
+#   1. determine the next SemVer version (dry-run, no tag pushed yet)
+#   2. sync that version into the plugin manifests
+#   3. regenerate all agent artifacts (skills/, dist/, plugins/) from core/ + adapters/
+#   4. validate + smoke-test the generated artifacts
+#   5. commit the regenerated artifacts back to main (only if something changed)
+#   6. create + push the version tag on that commit
+#
+# The tag therefore always points at the commit that contains the freshly
+# generated artifacts.
+#
+# Loop prevention:
+#   - Commits pushed with the default GITHUB_TOKEN do NOT trigger new workflow
+#     runs (GitHub's built-in recursion guard).
+#   - The artifact commit additionally carries "[skip ci]" as belt-and-suspenders.
+#   - Pushing a tag does not trigger this workflow (it only listens on branch pushes).
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Build, Commit Artifacts & Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # 1. Resolve the next version WITHOUT creating the tag yet.
+      - name: Determine next version (dry run)
+        id: version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          tag_prefix: v
+          release_branches: main
+          dry_run: true
+
+      # 2. Sync the resolved version into the plugin manifests so the generated
+      #    plugins/ packages embed the correct version. Skipped when there is no
+      #    version bump (e.g. a docs-only commit).
+      - name: Sync version into manifests
+        if: steps.version.outputs.new_version != ''
+        env:
+          VERSION: ${{ steps.version.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+
+          bump_root() {
+            local file="$1"
+            [ -f "$file" ] || { echo "skip (missing): $file"; return; }
+            jq --arg v "$VERSION" '.version = $v' "$file" > "$tmp" && mv "$tmp" "$file"
+            echo "updated root version: $file"
+          }
+
+          bump_plugins_entry() {
+            local file="$1"
+            [ -f "$file" ] || { echo "skip (missing): $file"; return; }
+            jq --arg v "$VERSION" \
+              'if (.plugins // empty) then (.plugins[] | select(.name == "spec-driven-development") | .version) |= $v else . end' \
+              "$file" > "$tmp" && mv "$tmp" "$file"
+            echo "updated plugins[] version: $file"
+          }
+
+          # Claude
+          bump_root          .claude-plugin/plugin.json
+          bump_plugins_entry .claude-plugin/marketplace.json
+
+          # Augment (root version on both files + plugins[] entry)
+          bump_root          .augment-plugin/plugin.json
+          bump_root          .augment-plugin/marketplace.json
+          bump_plugins_entry .augment-plugin/marketplace.json
+
+          # Codex / Junie / Roo
+          bump_root          .codex-plugin/plugin.json
+          bump_root          .junie-plugin/plugin.json
+          bump_root          .roo-plugin/plugin.json
+
+      # 3. Regenerate all agent artifacts from the sources.
+      - name: Build all agents
+        run: bash scripts/build.sh all
+
+      # 4. Validate + smoke-test the generated artifacts.
+      - name: Validate generated files
+        run: python3 scripts/validate.py
+
+      - name: Smoke test
+        run: bash tests/build_test.sh
+
+      # 5. Commit regenerated artifacts + manifests back to main, only if changed.
+      - name: Commit regenerated artifacts
+        id: commit
+        env:
+          TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add skills/ dist/ plugins/ \
+            .claude-plugin/ .augment-plugin/ .codex-plugin/ .junie-plugin/ .roo-plugin/ .agents/
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          msg="chore: rebuild generated artifacts"
+          if [ -n "${TAG:-}" ]; then
+            msg="chore: rebuild generated artifacts and sync version to ${TAG}"
+          fi
+          git commit -m "${msg} [skip ci]"
+          git push origin main
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+
+      # 6. Tag the local HEAD of main, which now contains the freshly generated
+      #    artifacts. We tag explicitly with git (rather than re-running the tag
+      #    action) because the action tags GITHUB_SHA — the original triggering
+      #    commit — which would miss the artifact commit pushed in step 5.
+      - name: Create and push release tag
+        if: steps.version.outputs.new_tag != ''
+        env:
+          TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"

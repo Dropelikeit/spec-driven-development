@@ -1,0 +1,33 @@
+{
+  "name": "spec-driven-development",
+  "version": "0.1.0",
+  "description": "Spec-Driven Development (SDD) — a structured, specification-first workflow for planning and executing software features. Covers five phases: initialize, specify, plan, task, and execute. Includes Graphify integration for knowledge-graph-aware codebase navigation.",
+  "author": {
+    "name": "René Berndt @ GameFixxer",
+    "url": "https://github.com/GameFixxer"
+  },
+  "homepage": "https://github.com/GameFixxer/spec-driven-development",
+  "repository": "https://github.com/GameFixxer/spec-driven-development",
+  "license": "MIT",
+  "keywords": ["sdd", "spec", "planning", "workflow", "development", "graphify"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Spec-Driven Development",
+    "shortDescription": "Spec-first planning & execution workflow from Codex",
+    "longDescription": "Guides you through initialize → specify → plan → task → execute with progress tracking, checkpoints, and optional Graphify knowledge-graph navigation.",
+    "developerName": "GameFixxer",
+    "category": "Productivity",
+    "websiteURL": "https://github.com/GameFixxer/spec-driven-development",
+    "privacyPolicyURL": "https://github.com/GameFixxer/spec-driven-development/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/GameFixxer/spec-driven-development/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Set up SDD for this project.",
+      "Create a spec for a new feature.",
+      "Plan this feature, then break it into tasks.",
+      "Start a sprint with these features."
+    ],
+    "brandColor": "#2563EB",
+    "composerIcon": "./icon.png",
+    "logo": "./icon.png"
+  }
+}

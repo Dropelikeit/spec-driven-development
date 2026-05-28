@@ -17,6 +17,8 @@ description: >
 
 # Spec-Driven Development (SDD)
 
+> Codex loads this skill on demand when your request matches the description above.
+
 You are guiding the user through a specification-first development workflow. The core idea: never jump straight into code. Instead, write structured markdown files that capture *what* needs to be built and *why*, then *how* to build it, then break the *how* into small executable tasks. Only then do you write code — and when you do, you follow the task list and mark progress as you go.
 
 This approach exists because projects that skip specification tend to accumulate drift between what was intended and what gets built. Specs catch misunderstandings early (when they're cheap to fix), plans force you to think through technical decisions before you're knee-deep in implementation, and task lists give both you and the user a shared view of what's done and what's left.
@@ -45,7 +47,7 @@ When talking to the user directly:
 
 ## Graphify Integration
 
-Graphify is a knowledge-graph tool that can be installed per repository inside Claude Code. When active, it maintains `graphify-out/GRAPH_REPORT.md` — a one-page structural summary of the codebase covering "god nodes" (highly-connected files), community clusters, and surprising cross-cutting connections. It may also install a pre-search hook and a `.claude/CLAUDE.md` directive asking the agent to consult the graph before architecture questions.
+Graphify is a knowledge-graph tool that can be installed per repository inside Codex. When active, it maintains `graphify-out/GRAPH_REPORT.md` — a one-page structural summary of the codebase covering "god nodes" (highly-connected files), community clusters, and surprising cross-cutting connections. It may also install a pre-search hook and a `AGENTS.md` directive asking the agent to consult the graph before architecture questions.
 
 **Detecting Graphify:** At the start of Phase 3, Phase 4, and Phase 5, check whether `graphify-out/GRAPH_REPORT.md` exists. If it does, Graphify is active.
 
@@ -96,14 +98,14 @@ This phase sets up the SDD scaffolding for a project. Run it once per project.
 
    Default constitution content — use the template in `references/constitution-template.md`.
 
-3. **Set up .claude/CLAUDE.md.** Add a development methodology section to `.claude/CLAUDE.md` (create the file if needed). This section tells future Claude Code sessions how to work within the SDD framework. Use the content in `references/context-file-template.md`.
+3. **Set up AGENTS.md.** Add a development methodology section to `AGENTS.md` (create the file if needed). This section tells future Codex sessions how to work within the SDD framework. Use the content in `references/context-file-template.md`.
 
 4. **Confirm completion.** One-line per file created (`✓ [path]`), then: "Ready. Name a feature to start Phase 2."
 
 ### Important
 
 - If `specs/` already exists, don't overwrite anything. Ask the user if they want to reinitialize.
-- If `.claude/CLAUDE.md` already exists, append the SDD section rather than replacing the file.
+- If `AGENTS.md` already exists, append the SDD section rather than replacing the file.
 
 ---
 
@@ -239,9 +241,9 @@ This phase breaks the plan into small, actionable work items. Each task should b
 1. **Read the inputs.** Read:
    - `specs/[feature-name]/plan.md`
    - `specs/[feature-name]/spec.md` (for acceptance criteria cross-reference)
-   - `.claude/CLAUDE.md` (for build commands, test commands, and platform targets)
+   - `AGENTS.md` (for build commands, test commands, and platform targets)
 
-   .claude/CLAUDE.md is the source of truth for how to build and test this project. The build commands defined there become the verification steps in the task list.
+   AGENTS.md is the source of truth for how to build and test this project. The build commands defined there become the verification steps in the task list.
 
 2. **Generate the task list.** Write `specs/[feature-name]/tasks.md`:
 
@@ -252,7 +254,7 @@ This phase breaks the plan into small, actionable work items. Each task should b
    - `[ ]` Not started
    - `[x]` Complete
    - `[~]` In progress
-   - `[P]` Parallelizable — will be executed concurrently via subagents
+   - `[P]` Parallelizable — independent work that is safe to do in any order (this agent runs them sequentially)
    - `[C]` Checkpoint — stop and verify before continuing
 
    ## Phase 1: Foundation
@@ -276,8 +278,8 @@ This phase breaks the plan into small, actionable work items. Each task should b
    - [C] Checkpoint: run all tests, review against spec acceptance criteria
 
    ## Build Verification
-   - [ ] Full build: [build command from .claude/CLAUDE.md, e.g. `npm run build`]
-   - [ ] Full test suite: [test command from .claude/CLAUDE.md, e.g. `npm test`]
+   - [ ] Full build: [build command from AGENTS.md, e.g. `npm run build`]
+   - [ ] Full test suite: [test command from AGENTS.md, e.g. `npm test`]
    - [ ] [One task per additional platform target, e.g. `npm run build:prod`, `docker build .`]
    - [C] Final checkpoint: all builds green, all tests pass, acceptance criteria verified
    ```
@@ -304,7 +306,7 @@ If you catch yourself writing tasks where implementation comes before its tests,
 
 ### Parallelization — real concurrent execution
 
-Tasks marked `[P]` aren't just a label — during execution, they are launched as concurrent subagents using the Agent tool. This means:
+Tasks marked `[P]` aren't just a label — they flag genuinely independent work. This agent has no parallel-subagent API, so it executes them sequentially (one at a time) — but the independence guarantee still matters, because it means the order is free to choose and a `[C]` checkpoint can safely batch-verify the group. This means:
 
 - Only mark tasks `[P]` when they are genuinely independent: no shared state mutations, no file conflicts, no ordering dependencies.
 - Each `[P]` task must be fully self-contained: it includes its own test-writing and implementation steps, targeting a specific module or file set that won't conflict with other `[P]` tasks.
@@ -328,12 +330,12 @@ Every task list ends with a **Build Verification** group. This group exists beca
 
 To generate this group:
 
-1. Read `.claude/CLAUDE.md` and look for build commands (e.g., `npm run build`, `cargo build`, `go build ./...`), test commands (e.g., `npm test`, `pytest`), and any platform-specific targets (e.g., `npm run build:prod`, `docker build .`, `make release`).
+1. Read `AGENTS.md` and look for build commands (e.g., `npm run build`, `cargo build`, `go build ./...`), test commands (e.g., `npm test`, `pytest`), and any platform-specific targets (e.g., `npm run build:prod`, `docker build .`, `make release`).
 2. Create one task per build/platform target. Each task runs the command and verifies it exits cleanly.
 3. Create one task for the full test suite command.
 4. End with a final `[C]` checkpoint that confirms everything is green.
 
-If .claude/CLAUDE.md doesn't have build commands (maybe the project is new), ask the user what build and test commands to use, or infer from the project structure (look for `package.json`, `Cargo.toml`, `Makefile`, `pyproject.toml`, etc.) and confirm with the user.
+If AGENTS.md doesn't have build commands (maybe the project is new), ask the user what build and test commands to use, or infer from the project structure (look for `package.json`, `Cargo.toml`, `Makefile`, `pyproject.toml`, etc.) and confirm with the user.
 
 ---
 
@@ -348,9 +350,9 @@ This phase is where code gets written. Every task follows the same rhythm: write
    - `specs/[feature]/spec.md` — what to build and why
    - `specs/[feature]/plan.md` — how to build it
    - `specs/[feature]/tasks.md` — what to do next
-   - `.claude/CLAUDE.md` — build commands, test commands, and project conventions
+   - `AGENTS.md` — build commands, test commands, and project conventions
 
-   .claude/CLAUDE.md is where you find the actual commands to run tests and build the project. Without it, you'd have to guess — and guessing leads to running `npm test` on a Python project or missing a required build flag.
+   AGENTS.md is where you find the actual commands to run tests and build the project. Without it, you'd have to guess — and guessing leads to running `npm test` on a Python project or missing a required build flag.
 
 2. Scan the task list and identify the next work to do — either the first `[ ]` task or a `[P]` group
 
@@ -367,34 +369,24 @@ For each `[ ]` task:
 
 ### Executing a parallel group (`[P]`)
 
-When you hit a group of consecutive `[P]` tasks, launch them all concurrently using the **Agent tool**. This is actual parallel execution, not a suggestion — spawn one subagent per `[P]` task in a single message so they run simultaneously.
+This agent has no parallel-subagent API, so a `[P]` group is executed **sequentially** — one task after another. The `[P]` marker is still meaningful: it certifies the tasks are independent (no shared state, no file conflicts, no ordering dependency), which means you may do them in any order and the closing `[C]` checkpoint can verify them as a batch.
 
-Each subagent gets a **minimal** prompt — no narrative, just structured fields:
+For each task in the group, follow the same rhythm as a sequential `[ ]` task:
 
-```
-TASK: [exact task line from tasks.md]
-FEATURE: [feature-name]
-READ: specs/[feature]/spec.md, specs/[feature]/plan.md, specs/memory/constitution.md, .claude/CLAUDE.md
-OWN_FILES: [files/modules this task touches — nothing else]
-RULES: test-first (write→fail→implement→pass), no shared config edits, no files outside OWN_FILES
-REPORT_WHEN_DONE: STATUS: done | TASK: [id] | FILES: [changed] | RESULT: [one line]
-```
+1. Mark it `[~]` in `tasks.md`
+2. Write the test first; run it to confirm it fails
+3. Implement until the test passes
+4. Run the full test suite to check for regressions
+5. Mark the task `[x]` in `tasks.md`
 
-This prompt is ~100 tokens vs ~200+ for a prose version. Over a sprint with 20+ parallel tasks, this halves the context overhead.
-
-After all subagents complete:
-
-1. Integrate their work (merge files, resolve any conflicts)
-2. Run the full test suite
-3. Mark all `[P]` tasks `[x]` in `tasks.md`
-4. If any subagent's tests fail after integration, fix the conflicts before moving on
+Because the tasks are independent, keep each one's edits confined to its own files/modules — if you notice two `[P]` tasks touching the same file, they were mis-marked: drop the `[P]` on one of them and treat it as ordered. Reference `specs/[feature]/spec.md`, `specs/[feature]/plan.md`, `specs/memory/constitution.md`, and `AGENTS.md` while implementing. After the whole group is done, run the full test suite before the `[C]` checkpoint.
 
 ### Executing a checkpoint (`[C]`)
 
 When you reach a `[C]` checkpoint:
 
-1. **Run the full test suite.** Every test, not just recent ones. Use the test command from .claude/CLAUDE.md.
-2. **Run the build.** Use the build command(s) from .claude/CLAUDE.md. A passing test suite with a broken build is still broken. This catches type errors, missing imports, and configuration problems that tests alone miss.
+1. **Run the full test suite.** Every test, not just recent ones. Use the test command from AGENTS.md.
+2. **Run the build.** Use the build command(s) from AGENTS.md. A passing test suite with a broken build is still broken. This catches type errors, missing imports, and configuration problems that tests alone miss.
 3. **Audit tasks.md.** Read the file and verify that every task marked `[x]` actually corresponds to working, tested code. If you find a task marked complete but its tests fail, unmark it (`[x]` → `[ ]`) and flag it.
 4. **Check against spec.md.** Read the acceptance criteria and assess which ones are now satisfied by the completed work. Record this in the checkpoint entry.
 5. **Write a checkpoint entry in progress.md** using this compact format:
@@ -418,7 +410,7 @@ When the user says "resume" or "continue":
 
 1. Read `specs/[feature-name]/progress.md` — look at the most recent checkpoint entry to understand the verified state of things
 2. Read `tasks.md` to find the first incomplete task
-3. Re-read `spec.md`, `plan.md`, and `.claude/CLAUDE.md` to refresh context and pick up build/test commands
+3. Re-read `spec.md`, `plan.md`, and `AGENTS.md` to refresh context and pick up build/test commands
 4. **Run the test suite and build before writing any new code.** This confirms reality matches what progress.md claims. If tests fail or the build is broken at a point where the last checkpoint said everything was green, something changed — investigate before continuing.
 5. Continue from the first `[ ]` task
 
@@ -461,376 +453,87 @@ When the user asks to review or check progress against the spec:
 
 ## Sprint Mode — Multi-Feature Team Workflow
 
-Sprint Mode extends single-feature SDD into a multi-feature, multi-agent workflow using Claude Code **Agent Teams**. Instead of working on one feature at a time, you collect multiple features into a sprint, refine them with a cross-functional team, and execute with role-based task assignment and phase gates.
+Sprint Mode coordinates multiple features as one unit. Its multi-agent variant relies on Claude Code **Agent Teams** (independent peer sessions that self-coordinate via a shared task list) — a capability Codex does not provide. So in Codex, Sprint Mode runs **sequentially**: you play every role yourself, in phase order, without spawning teammates. The structure and artifacts are identical; only the concurrency is removed.
 
-**When to use Sprint Mode:** The user has multiple features to build and wants them planned and executed together as a cohesive unit, or explicitly asks for "sprint mode" / "team mode".
+**When to use Sprint Mode:** the user has multiple features to build and wants them planned and executed together, or explicitly asks for "sprint mode" / "team mode".
 
-**Prerequisite:** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` must be enabled. If it isn't, tell the user: "Sprint Mode requires Agent Teams. Enable it with: `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`" and fall back to standard single-feature SDD.
-
-### How Agent Teams work (key concepts)
-
-Agent Teams are fundamentally different from subagents. Understanding this is critical:
-
-- **You (the lead session) create the team using natural language.** There is no programmatic API or tool call to spawn teammates. You literally tell Claude Code: "Create an agent team with these teammates: ..."
-- **Teammates are independent Claude Code sessions.** Each has its own context window. They load `CLAUDE.md`, MCP servers, and skills from the project automatically — you do not need to tell them to read these files.
-- **Teammates coordinate via a shared task list.** The lead creates tasks, teammates claim and complete them. Tasks can have dependencies that block until resolved.
-- **Teammates message each other directly.** Unlike subagents (which only report back to the caller), teammates can communicate with each other by name.
-- **The lead's conversation history does NOT carry over.** Teammates start fresh with only their spawn prompt and project context. Include task-specific details in the spawn prompt.
-- **Reusable roles via subagent definitions.** You can define roles as `.md` files in `.claude/agents/` and reference them by name when spawning teammates: "Spawn a teammate using the backend-dev agent type."
-
-### Agent Teams vs Subagents — when to use which
-
-| Aspect | Subagents (`[P]` tasks) | Agent Teams (Sprint Mode) |
-|--------|------------------------|--------------------------|
-| Spawned via | `Agent` tool call | Natural language to lead |
-| Communication | Report results back to caller only | Teammates message each other directly |
-| Coordination | Main agent manages all work | Shared task list with self-coordination |
-| Context | Inherit nothing, get a prompt | Load full project context (CLAUDE.md, skills, MCPs) |
-| Best for | Focused, isolated parallel tasks | Complex work requiring discussion and collaboration |
-| Token cost | Lower (results summarized back) | Higher (each teammate is a separate Claude instance) |
-
-Standard Phase 5 execution uses **subagents** for `[P]` tasks. Sprint Mode uses **Agent Teams** for the entire sprint.
-
-### Sprint artifacts
+### Sprint artifact
 
 Sprint Mode introduces one new artifact:
 
-- `specs/sprints/sprint-[N].md` — The sprint manifest. Lists features, team roster, refinement log, and execution progress.
+- `specs/sprints/sprint-[N].md` — the sprint manifest: features, role roster, refinement log, and execution progress.
 
-All other artifacts (spec.md, plan.md, tasks.md, progress.md per feature) remain the same as standard SDD. Sprint Mode orchestrates them, it doesn't replace them.
-
-### Optional: Define reusable teammate roles
-
-Before starting a sprint, you can create subagent definitions so roles are reusable across sprints. Create `.md` files in `.claude/agents/`:
-
-**`.claude/agents/backend-dev.md`**
-```markdown
----
-name: backend-dev
-description: Backend developer for server logic, APIs, database, and infrastructure
-model: sonnet
-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Glob
-  - Grep
----
-
-You are a Backend Developer on an SDD sprint team. Your responsibilities:
-- Implement server-side logic, APIs, database schemas, and services
-- Follow test-first development: write failing test → implement → verify
-- Only modify files assigned to you — do not touch files owned by other teammates
-- When you complete a task, message the tech-lead with what you changed
-- When blocked, message the tech-lead immediately with what's blocking you
-- Read specs/memory/constitution.md for project principles
-- Read .claude/CLAUDE.md for build and test commands
-- Always run the test suite after completing a task
-```
-
-**`.claude/agents/solution-architect.md`**
-```markdown
----
-name: solution-architect
-description: Solution architect for cross-feature design, shared components, and integration
-model: sonnet
-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Glob
-  - Grep
----
-
-You are a Solution Architect on an SDD sprint team. Your responsibilities:
-- Review technical approaches and flag cross-feature integration issues
-- Watch for shared components being modified by multiple features
-- Identify API contract conflicts and duplicate code across features
-- During refinement: review plans and provide complexity estimates
-- During execution: own integration tasks and cross-cutting concerns
-- Read specs/memory/constitution.md for project principles
-```
-
-Other common roles: `frontend-dev.md`, `ui-designer.md`, `app-dev.md`. The `tools` allowlist in the definition restricts what that teammate can do. Team coordination tools (SendMessage, task management) are always available regardless of the `tools` list.
-
-If no subagent definitions exist, that's fine — you can still spawn teammates with inline role descriptions. Definitions just make it more consistent across sprints.
+All other artifacts (`spec.md`, `plan.md`, `tasks.md`, `progress.md` per feature) are unchanged. Sprint Mode orchestrates them; it doesn't replace them.
 
 ### Starting a sprint
 
-When the user triggers Sprint Mode:
-
-1. **Determine sprint number.** Check `specs/sprints/` for existing sprints. New sprint = max(N) + 1, or 1 if none exist.
-
-2. **Collect features.** Ask the user: "Which features go in this sprint?" Accept a list. For each feature, check if a spec already exists under `specs/[feature-name]/`. Features without specs will need Phase 2 (Specify) during refinement.
-
-3. **Present the default team roster.** Show:
-
-   ```
-   Refinement Team (all present during planning):
-   - Product Manager — validates specs, prioritizes, resolves scope
-   - Solution Architect — cross-feature tech design, shared components
-   - Frontend Dev — UI estimates, component reuse, UX flags
-   - Backend Dev — API/data estimates, perf concerns, service boundaries
-   - App Dev — mobile/platform estimates, platform constraints
-   - UI Designer — user flows, accessibility, design consistency
-   ```
-
-   Ask: "Use this default roster, or customize? (add/remove/rename roles)"
-
-   For pure backend projects, suggest trimming to: Backend Dev + Solution Architect (+ PM if scope decisions are needed).
-
-4. **Create the sprint file.** Write `specs/sprints/sprint-[N].md`. List all features with their current status (spec exists? plan exists? tasks exist?).
-
+1. **Determine sprint number.** Check `specs/sprints/` — new sprint = max(N) + 1, or 1 if none exist.
+2. **Collect features.** Ask the user which features go in this sprint. For each, check whether a spec already exists under `specs/[feature-name]/`; features without specs need Phase 2 during refinement.
+3. **Agree a role set.** Even without live teammates, roles structure the work. Default roles: Product Manager, Solution Architect, Frontend Dev, Backend Dev, App Dev, UI Designer. Ask the user to confirm or trim the set (pure backend → Backend Dev + Solution Architect).
+4. **Create the sprint file.** Write `specs/sprints/sprint-[N].md` listing every feature with its current status (spec/plan/tasks present?).
 5. **Confirm.** `✓ Created specs/sprints/sprint-[N].md — [X] features, [Y] roles. Ready for refinement.`
 
-### Sprint Refinement
+### Sprint Refinement (sequential)
 
-Refinement is a short-lived team session where features get broken down into role-assignable tasks. Think of it as a planning meeting: everyone contributes their perspective, then the meeting ends.
+Refine each feature in priority order. For each feature you act as every role in turn — there are no teammates to message, so the review steps become self-review passes you perform inline:
 
-#### Creating the refinement team
-
-Tell Claude Code to create an agent team in natural language. This is the actual instruction you give:
-
-```
-Create an agent team for sprint refinement with these teammates:
-- "pm" — Product Manager: validates specs, prioritizes features, resolves scope questions. 
-  Use the product-manager agent type if it exists, otherwise create with this role description.
-- "architect" — Solution Architect: reviews technical approach, flags cross-feature integration 
-  issues, identifies shared components. Use the solution-architect agent type if it exists.
-- "backend" — Backend Dev: estimates complexity for server/API/database tasks, flags performance 
-  concerns. Use the backend-dev agent type if it exists.
-
-Each teammate should read:
-- specs/sprints/sprint-[N].md for the sprint overview
-- specs/memory/constitution.md for project principles
-- .claude/CLAUDE.md for build commands and project conventions
-
-Require plan approval before any teammate makes file changes.
-This is a refinement session — no code, only spec/plan/task files.
-```
-
-Adjust the teammate list based on the roster the user approved. If subagent definitions exist in `.claude/agents/`, reference them by name ("Use the backend-dev agent type"). If they don't, include the role description inline.
-
-The main session acts as **Tech Lead** (facilitator). You are the lead — you create the team, assign work, and run checkpoints.
-
-#### Refinement flow
-
-For each feature in the sprint (in priority order):
-
-1. **If no spec exists:** Tech Lead runs Phase 2 (Specify) to create `spec.md`. Message the PM teammate to review and validate the user stories and acceptance criteria:
-   ```
-   @pm Review specs/[feature]/spec.md — are the user stories complete? 
-   Are acceptance criteria specific enough to test? Flag any scope concerns.
-   ```
-
-2. **If no plan exists:** Tech Lead runs Phase 3 (Plan) to create `plan.md`. Then message relevant teammates to review:
-   ```
-   @architect Review specs/[feature]/plan.md — flag cross-feature integration 
-   issues or shared component conflicts with other sprint features.
-   
-   @backend Review specs/[feature]/plan.md — estimate complexity for the 
-   backend tasks. Flag any performance concerns or missing technical decisions.
-   ```
-   Wait for teammates to respond. Incorporate their feedback into the plan.
-
-3. **Task generation with role annotations:** Tech Lead runs Phase 4 (Task) to create `tasks.md`, but with one addition: every task gets a `@role` annotation indicating which role owns it.
-
-   ```markdown
-   ## Phase 1: Foundation
-   - [ ] Test: database schema for user profiles @backend
-   - [ ] Implement: database migration @backend
-   - [C] Checkpoint @tech-lead
-
-   ## Phase 2: Business Logic
-   - [P] Test + Implement: auth service @backend
-   - [P] Test + Implement: login form component @frontend
-   - [P] Test + Implement: biometric auth module @app
-   - [C] Checkpoint @tech-lead
-
-   ## Phase 3: Integration
-   - [ ] Test: API integration tests @backend
-   - [ ] Implement: wire frontend to API @frontend
-   - [ ] Implement: wire app to API @app
-   - [C] Checkpoint @tech-lead
-
-   ## Phase 4: Polish
-   - [ ] Accessibility audit @ui-designer
-   - [ ] Error states and empty states @frontend
-   - [ ] API documentation @backend
-   - [C] Checkpoint @tech-lead
-   ```
-
-   Tasks that span multiple roles get split into role-specific subtasks. A single task should never have two `@role` annotations — if it needs two roles, split it.
-
-4. **Log the refinement.** After each feature is refined, write a refinement entry in `sprint-[N].md`:
+1. **If no spec exists:** run Phase 2 (Specify) to create `spec.md`, then review it from a Product-Manager lens (user stories complete? acceptance criteria testable? scope concerns?).
+2. **If no plan exists:** run Phase 3 (Plan) to create `plan.md`, then review it from an Architect lens (cross-feature integration, shared components) and a per-discipline lens (complexity estimates, performance concerns).
+3. **Task generation with role annotations:** run Phase 4 (Task) to create `tasks.md`, and annotate every task with exactly one `@role` indicating which discipline owns it. Checkpoints are always `@tech-lead`. A task that spans two roles must be split.
+4. **Log the refinement** in `sprint-[N].md`:
 
    ```markdown
    ### [feature-name] — [Date]
-   attendees: PM, SA, BE
+   roles: PM, SA, BE
    decisions: [key decisions from planning]
    task_count: [N] tasks, [X] parallel groups
    role_assignments: BE:[N], FE:[N], UI:[N]
    ```
 
-5. **After all features are refined:** Ask the lead to clean up the refinement team:
-   ```
-   Ask all teammates to shut down, then clean up the team.
-   ```
-   Summarize to user:
-   ```
-   ✓ Refinement complete for sprint [N]
-   Features: [count] refined
-   Total tasks: [count] across all features
-   Role distribution: BE:[N], FE:[N], UI:[N]
-   Ready for execution.
-   ```
+5. **After all features are refined**, summarize: features refined, total tasks, role distribution. Ready for execution.
 
 #### Role annotation rules
 
 - `@frontend` — UI components, client-side logic, CSS, browser APIs
-- `@backend` — Server logic, APIs, database, infrastructure
-- `@app` — Mobile/native/platform-specific code
-- `@ui-designer` — Accessibility audits, design reviews, asset creation
-- `@tech-lead` — Checkpoints, integration tasks, cross-cutting concerns
+- `@backend` — server logic, APIs, database, infrastructure
+- `@app` — mobile/native/platform-specific code
+- `@ui-designer` — accessibility audits, design reviews, asset creation
+- `@tech-lead` — checkpoints, integration tasks, cross-cutting concerns
 - Custom roles use the same `@kebab-case` convention
 
 Every task MUST have exactly one `@role`. Checkpoints are always `@tech-lead`.
 
-### Sprint Execution
+### Sprint Execution (sequential, phase-gated)
 
-Execution is a separate team session from refinement. After refinement cleanup, you create a new team for execution. Unlike refinement (which spawns all roles), execution only spawns roles that actually have tasks assigned.
+Execution proceeds phase by phase **across all features at once**: complete every Phase 1 task (of every feature) before any Phase 2 task, and so on. You do the work of all roles yourself; the `@role` annotations simply document ownership and let you group related tasks.
 
-#### Determining which roles to spawn
+For each phase M:
 
-After refinement, scan all `tasks.md` files in the sprint:
-
-1. Collect every unique `@role` annotation (excluding `@tech-lead` — that's you)
-2. Count tasks per role
-3. Only spawn teammates for roles with ≥1 assigned task
-4. Update the Execution Team table in `sprint-[N].md`:
+1. Work through every `@role` task in Phase M, across all features, using test-first for each (write → fail → implement → pass).
+2. When all Phase M tasks are done, run the `[C]` checkpoint yourself: full test suite **and** build, using commands from `AGENTS.md`. In Sprint Mode the checkpoint covers **all** features in the sprint, not just one — cross-feature regressions must be caught here.
+3. Record the checkpoint in each feature's `progress.md` and update the gate status in `sprint-[N].md`:
 
    ```markdown
-   ### Execution Team (selective)
-   | Role | Spawned | Task Count |
-   |------|---------|------------|
-   | Backend Dev | yes | 15 |
-   | Frontend Dev | yes | 12 |
-   | App Dev | no | 0 |
-   | UI Designer | yes | 3 |
+   ### Phase [M] Gate
+   all_tasks_done: yes
+   checkpoint: pass
    ```
 
-#### Creating the execution team
+4. Only advance to Phase M+1 once the gate is clear (all tasks done + checkpoint passes). If the checkpoint fails, fix the rework before advancing.
 
-Tell Claude Code to create a new agent team. This is the actual instruction:
+Watch for cross-feature concerns throughout: shared components touched by multiple features (keep edits coherent), API-contract conflicts (resolve before the gate clears), and duplicate code across features (flag for the Polish phase).
 
-```
-Create an agent team for sprint [N] execution with these teammates:
-
-- "backend" — Backend Dev. Use the backend-dev agent type.
-  Your tasks for this sprint (Phase 1 first, wait for phase gate before proceeding):
-  [list all @backend tasks from all features' tasks.md files]
-  
-- "frontend" — Frontend Dev. Use the frontend-dev agent type.
-  Your tasks for this sprint (Phase 1 first, wait for phase gate before proceeding):
-  [list all @frontend tasks from all features' tasks.md files]
-
-Rules for all teammates:
-- Work through tasks in phase order (Phase 1, then Phase 2, etc.)
-- DO NOT start the next phase until I (tech-lead) clear the phase gate
-- Test-first: write failing test → implement → run full test suite
-- Only modify files related to your assigned tasks
-- When you finish all tasks in the current phase, message tech-lead
-- When blocked, message tech-lead immediately
-- Read .claude/CLAUDE.md for build/test commands
-
-Wait for my signal to begin Phase 1.
-```
-
-Aim for 5-6 tasks per teammate. If one role has 20+ tasks, consider splitting into two teammates (e.g., "backend-1" and "backend-2") with non-overlapping file ownership.
-
-#### Phase gate execution
-
-Sprint execution proceeds phase by phase across all features. All roles must complete their Phase N tasks before anyone starts Phase N+1.
-
-The Tech Lead (you, the main session) orchestrates this:
-
-1. **Start Phase M.** Message all teammates:
-   ```
-   @backend @frontend → Phase [M]: [phase name]. Begin your Phase [M] tasks now.
-   ```
-   Or broadcast to all teammates simultaneously if appropriate.
-
-2. **Teammates execute their Phase M tasks.** Each teammate:
-   - Works through their `@role` tasks in the current phase
-   - Uses test-first for every task
-   - Messages tech-lead when all Phase M tasks are done
-   - Messages tech-lead if blocked
-
-3. **Tech Lead monitors.** Teammates notify the lead automatically when they go idle (finish their current work). When all teammates report done for Phase M:
-   - Run the `[C]` checkpoint yourself (full test suite + build using commands from CLAUDE.md)
-   - Record checkpoint in each feature's `progress.md`
-   - Update `sprint-[N].md` gate status:
-     ```
-     ### Phase [M] Gate
-     all_roles_done: yes
-     blocked_roles: none
-     checkpoint: pass
-     ```
-   - Message all teammates to advance: `Phase [M] gate cleared. → Phase [M+1]: [name]. Begin now.`
-
-4. **If a teammate is blocked:**
-   - Investigate the blocker by messaging the teammate directly
-   - If it's a cross-role dependency, message the blocking teammate to coordinate
-   - If it requires user input, escalate to the user
-   - Gate does NOT clear until all blockers are resolved
-
-5. **Phase gate rules:**
-   - No teammate may start Phase N+1 tasks until you (Tech Lead) clear the Phase N gate
-   - A gate clears only when: all roles done + checkpoint passes
-   - If checkpoint fails, assign rework to the relevant teammate before clearing the gate
-   - Checkpoints in Sprint Mode run the full test suite and build for ALL features in the sprint, not just the current feature — cross-feature regressions must be caught
-
-#### Handling cross-feature concerns
-
-During execution, watch for:
-
-- Shared components being modified by multiple features → assign clear file ownership per teammate, coordinate via messaging
-- API contract conflicts → resolve before gate clears
-- Duplicate code across features → flag for refactoring in Polish phase
-
-If a Solution Architect teammate is spawned, delegate cross-feature monitoring to them.
-
-#### Sprint completion
+### Sprint completion
 
 After all phases complete across all features:
 
-1. Run Build Verification yourself (the final group in each `tasks.md`) — full build, full test suite, fat JAR, Docker image
-2. Update `sprint-[N].md`:
-   ```
-   status: done
-   completed: [Date]
-   features_delivered: [list]
-   total_tasks: [N] completed, [M] reworked
-   ```
-3. Ask all teammates to shut down, then clean up the team:
-   ```
-   Ask all teammates to shut down, then clean up the team.
-   ```
-4. Report to user: `✓ Sprint [N] complete — [X] features delivered`
+1. Run Build Verification (the final group in each `tasks.md`) — full build, full test suite, and any platform targets.
+2. Update `sprint-[N].md`: `status: done`, `completed: [Date]`, `features_delivered: [list]`, `total_tasks: [N] completed, [M] reworked`.
+3. Report to user: `✓ Sprint [N] complete — [X] features delivered`.
 
-### Sprint Mode with single-feature fallback
+### Single-feature fallback
 
-If the user starts Sprint Mode with only one feature, it still works — refinement generates role-annotated tasks, execution spawns only needed roles. The overhead is minimal and the structure is consistent. Don't tell the user "you only have one feature, use standard mode" — just run it.
-
-### Agent Teams troubleshooting
-
-- **Teammates not appearing:** Press Shift+Down to cycle through active teammates (in-process mode). Check that `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is enabled.
-- **Lead doing work instead of delegating:** Tell the lead: "Wait for your teammates to complete their tasks before proceeding."
-- **Too many permission prompts:** Pre-approve common operations in permission settings before spawning teammates, or use `--dangerously-skip-permissions` if appropriate for the project.
-- **Teammate stopped on error:** Message the teammate directly with additional instructions, or ask the lead to spawn a replacement.
-- **One team at a time:** Clean up the refinement team before creating the execution team. Only one team can exist per session.
+If the user starts Sprint Mode with only one feature, it still works — refinement produces role-annotated tasks and execution runs them phase by phase. The overhead is minimal and the structure stays consistent; just run it.
 
 ---
 

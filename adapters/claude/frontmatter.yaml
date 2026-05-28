@@ -1,0 +1,14 @@
+name: sdd
+description: >
+  Spec-Driven Development (SDD) — a structured, specification-first development workflow.
+  Guides you through 5 phases: initialize project structure, write feature specs, create
+  technical plans, break work into tasks, and execute with progress tracking. Use this skill
+  whenever the user mentions spec-driven development, SDD, creating or initializing specs,
+  planning a feature, breaking work into tasks, resuming from a task list, tracking development
+  progress, or reviewing implementation against a spec. Also trigger when the user says things
+  like "set up SDD", "new feature spec", "plan this feature", "create tasks", "start working",
+  "resume where we left off", "review against spec", "update progress", "start a sprint",
+  "refine features", or "execute sprint". Even if the user doesn't use the term "SDD"
+  explicitly, trigger this skill when they ask to create a structured spec-then-plan-then-tasks
+  workflow for a feature or project, or when they want to coordinate multiple features with a
+  team-based approach.

@@ -1,0 +1,1 @@
+they flag genuinely independent work. This agent has no parallel-subagent API, so it executes them sequentially (one at a time) — but the independence guarantee still matters, because it means the order is free to choose and a `[C]` checkpoint can safely batch-verify the group
