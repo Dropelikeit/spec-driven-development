@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-06-05
+
+### Fixed
+- Claude plugin manifest `repository` field was an npm-style object (`{ "type": "git", "url": "..." }`), which the Claude Code plugin loader rejected with `repository: Invalid input: expected string, received object`, blocking installation. It is now a string URL, matching the other agents' manifests.
+- Bumped all plugin and marketplace manifest `version` fields to match the released `0.2.0` line (they had been left at `0.1.0`).
+
 ## [0.2.0] — 2026-05-28
 
 ### Added
