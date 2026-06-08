@@ -42,7 +42,22 @@ Clone your fork, then point Claude Code at your local checkout instead of the pu
 /plugin install spec-driven-development@spec-driven-development
 ```
 
-Iterate on `skills/sdd/SKILL.md` and the files under `skills/sdd/references/`. Reload the skill in Claude Code to pick up changes.
+Edit the **sources**, not the generated output: the per-agent skills are built from `core/kernel.md`, `core/references/`, and the `adapters/<agent>/` snippets. The files under `skills/`, `dist/`, and `plugins/` are generated artifacts — never hand-edit them.
+
+### Regenerating build artifacts (required before you push)
+
+After changing any source, regenerate the artifacts and commit them:
+
+```
+bash scripts/build.sh all
+```
+
+The marketplace installs plugins directly from the repo tree on `main`, so the committed `skills/`, `dist/`, and `plugins/` **must** match the sources. CI enforces this — `verify-build` rebuilds and fails any PR whose committed artifacts are out of date. It also checks that all manifest versions agree and that `validate.py` and the smoke tests pass, so run them locally first:
+
+```
+python3 scripts/validate.py
+bash tests/build_test.sh
+```
 
 When you're ready to submit, push your branch to your fork and open the PR against `GameFixxer/spec-driven-development:main`.
 
