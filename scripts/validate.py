@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Validate generated SKILL.md frontmatter, snippet coverage, and plugin bundles."""
+import json
 import re
 import sys
 from pathlib import Path
 
 REQUIRED_KEYS = {"name", "description"}
+SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)*$")
 
 ROOT = Path(__file__).resolve().parent.parent
 ADAPTERS_DIR = ROOT / "adapters"
@@ -123,6 +125,70 @@ def validate_plugin_bundles():
                 errors.append(f"{agent}: bundle manifest skills path not rewritten to ./skills/")
 
 
+def _load_json(path):
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:  # noqa: BLE001 - report any parse/read failure
+        errors.append(f"{path}: invalid JSON ({exc})")
+        return None
+
+
+def validate_versions_and_repository():
+    """Every manifest must declare the same string semver version, and any
+    `repository` field must be a string URL (an object form is rejected by the
+    Claude plugin loader at install time)."""
+    versions = []  # (label, value)
+
+    def record_version(label, value):
+        if not isinstance(value, str):
+            errors.append(f"{label}: version must be a string, got {type(value).__name__}")
+            return
+        if not SEMVER_RE.match(value):
+            errors.append(f"{label}: version {value!r} is not valid semver (X.Y.Z)")
+        versions.append((label, value))
+
+    def record_repository(label, value):
+        if value is not None and not isinstance(value, str):
+            errors.append(
+                f"{label}: repository must be a string URL, got {type(value).__name__}"
+            )
+
+    for agent, mdir in MANIFEST_DIR.items():
+        # Source plugin manifest (hand-edited; version bumped in the PR).
+        src = ROOT / mdir / "plugin.json"
+        if not src.exists():
+            errors.append(f"{agent}: source manifest missing at {src}")
+        else:
+            data = _load_json(src)
+            if data is not None:
+                record_version(str(src), data.get("version"))
+                record_repository(str(src), data.get("repository"))
+
+        # Optional marketplace manifest (root version and/or plugins[] entry).
+        mkt = ROOT / mdir / "marketplace.json"
+        if mkt.exists():
+            mdata = _load_json(mkt)
+            if mdata is not None:
+                if "version" in mdata:
+                    record_version(f"{mkt} (root)", mdata.get("version"))
+                for entry in mdata.get("plugins", []) or []:
+                    if entry.get("name") == PLUGIN_NAME:
+                        record_version(f"{mkt} (plugins[{PLUGIN_NAME}])", entry.get("version"))
+
+        # Generated bundle manifest (must match the source it was copied from).
+        bundle = ROOT / f"plugins/{agent}/{PLUGIN_NAME}/{mdir}/plugin.json"
+        if bundle.exists():
+            bdata = _load_json(bundle)
+            if bdata is not None:
+                record_version(str(bundle), bdata.get("version"))
+                record_repository(str(bundle), bdata.get("repository"))
+
+    distinct = sorted({v for _, v in versions})
+    if len(distinct) > 1:
+        detail = ", ".join(f"{label}={value}" for label, value in versions)
+        errors.append(f"inconsistent plugin versions across manifests: {distinct} ({detail})")
+
+
 def main():
     for agent, path in OUT_PATHS.items():
         validate_frontmatter(agent, path)
@@ -130,6 +196,7 @@ def main():
     validate_no_stray_placeholders()
     validate_references()
     validate_plugin_bundles()
+    validate_versions_and_repository()
     if errors:
         for e in errors:
             print(f"FAIL: {e}", file=sys.stderr)

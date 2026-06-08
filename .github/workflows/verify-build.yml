@@ -1,10 +1,17 @@
 name: Verify build
 
-# PR sanity check: the sources must build cleanly and pass validation + smoke
-# tests. Generated artifacts (skills/, dist/, plugins/) are produced and
-# committed automatically after merge by release.yml, so contributors are NOT
-# required to build and commit them locally — this workflow therefore does not
-# enforce drift against committed outputs.
+# PR gate. The sources must build cleanly, pass validation + smoke tests, the
+# committed generated artifacts must match a fresh build, the pipeline gates
+# themselves must work, and the workflow files must lint.
+#
+# The marketplace installs plugins directly from the repo tree on `main`
+# (`/plugin marketplace add GameFixxer/spec-driven-development` reads
+# ./plugins/claude/...), so those artifacts are the distribution and must stay in
+# sync with the sources. release.yml no longer regenerates them post-merge — it
+# only validates and tags — so contributors MUST commit regenerated artifacts and
+# this workflow enforces that they did.
+#
+# To regenerate locally before pushing:  bash scripts/build.sh all
 
 on:
   pull_request:
@@ -18,9 +25,28 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
       - name: Build all agents
         run: bash scripts/build.sh all
-      - name: Validate frontmatter and coverage
+
+      - name: Validate frontmatter, coverage, versions and repository fields
         run: python3 scripts/validate.py
-      - name: Smoke test
+
+      - name: Smoke test (build outputs)
         run: bash tests/build_test.sh
+
+      - name: Check generated artifacts are up to date
+        run: bash scripts/check_drift.sh
+
+      - name: Pipeline self-tests (gates reject bad states)
+        run: bash tests/pipeline_test.sh
+
+      - name: Lint workflows (actionlint + shellcheck)
+        env:
+          ACTIONLINT_VERSION: "1.7.7"
+        run: |
+          set -euo pipefail
+          curl -sSL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz actionlint
+          ./actionlint -color
