@@ -1,37 +1,35 @@
 name: Release
 
-# Single ordered pipeline that runs after a merge to main:
-#   1. determine the next SemVer version (dry-run, no tag pushed yet)
-#   2. sync that version into the plugin manifests
-#   3. regenerate all agent artifacts (skills/, dist/, plugins/) from core/ + adapters/
-#   4. validate + smoke-test the generated artifacts
-#   5. commit the regenerated artifacts back to main (only if something changed)
-#   6. create + push the version tag on that commit
+# Runs after a merge to main and cuts a release WITHOUT writing back to the
+# branch:
+#   1. build all agent artifacts and run validation + smoke tests as a final gate
+#   2. read the release version from the committed Claude manifest (the single
+#      source of truth — version bumps happen in the PR, not here)
+#   3. if no tag exists for that version yet, package each agent's plugin bundle
+#      and publish a GitHub Release. `gh release create` creates the tag
+#      server-side, so nothing is pushed to the protected `main` branch.
 #
-# The tag therefore always points at the commit that contains the freshly
-# generated artifacts.
-#
-# Loop prevention:
-#   - Commits pushed with the default GITHUB_TOKEN do NOT trigger new workflow
-#     runs (GitHub's built-in recursion guard).
-#   - The artifact commit additionally carries "[skip ci]" as belt-and-suspenders.
-#   - Pushing a tag does not trigger this workflow (it only listens on branch pushes).
+# Why no commit-back: `main` is governed by a repository ruleset (require pull
+# request + required signatures + no force-push). A workflow pushing generated
+# artifacts straight to main is rejected by that ruleset. Instead, the generated
+# artifacts (skills/, dist/, plugins/) are committed as part of each PR and
+# enforced up to date by verify-build.yml. This workflow only validates and tags.
 
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   release:
-    name: Build, Commit Artifacts & Tag
+    name: Validate & Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
           fetch-depth: 0
 
       - name: Set up Python
@@ -39,102 +37,71 @@ jobs:
         with:
           python-version: "3.11"
 
-      # 1. Resolve the next version WITHOUT creating the tag yet.
-      - name: Determine next version (dry run)
-        id: version
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
-          tag_prefix: v
-          release_branches: main
-          dry_run: true
-
-      # 2. Sync the resolved version into the plugin manifests so the generated
-      #    plugins/ packages embed the correct version. Skipped when there is no
-      #    version bump (e.g. a docs-only commit).
-      - name: Sync version into manifests
-        if: steps.version.outputs.new_version != ''
-        env:
-          VERSION: ${{ steps.version.outputs.new_version }}
-        run: |
-          set -euo pipefail
-          tmp="$(mktemp)"
-
-          bump_root() {
-            local file="$1"
-            [ -f "$file" ] || { echo "skip (missing): $file"; return; }
-            jq --arg v "$VERSION" '.version = $v' "$file" > "$tmp" && mv "$tmp" "$file"
-            echo "updated root version: $file"
-          }
-
-          bump_plugins_entry() {
-            local file="$1"
-            [ -f "$file" ] || { echo "skip (missing): $file"; return; }
-            jq --arg v "$VERSION" \
-              'if (.plugins // empty) then (.plugins[] | select(.name == "spec-driven-development") | .version) |= $v else . end' \
-              "$file" > "$tmp" && mv "$tmp" "$file"
-            echo "updated plugins[] version: $file"
-          }
-
-          # Claude
-          bump_root          .claude-plugin/plugin.json
-          bump_plugins_entry .claude-plugin/marketplace.json
-
-          # Augment (root version on both files + plugins[] entry)
-          bump_root          .augment-plugin/plugin.json
-          bump_root          .augment-plugin/marketplace.json
-          bump_plugins_entry .augment-plugin/marketplace.json
-
-          # Codex / Junie / Roo
-          bump_root          .codex-plugin/plugin.json
-          bump_root          .junie-plugin/plugin.json
-          bump_root          .roo-plugin/plugin.json
-
-      # 3. Regenerate all agent artifacts from the sources.
+      # 1. Final gate: the committed artifacts must build, validate and smoke-test
+      #    cleanly. (PRs already enforce this; we re-check before tagging.)
       - name: Build all agents
         run: bash scripts/build.sh all
 
-      # 4. Validate + smoke-test the generated artifacts.
       - name: Validate generated files
         run: python3 scripts/validate.py
 
       - name: Smoke test
         run: bash tests/build_test.sh
 
-      # 5. Commit regenerated artifacts + manifests back to main, only if changed.
-      - name: Commit regenerated artifacts
-        id: commit
-        env:
-          TAG: ${{ steps.version.outputs.new_tag }}
+      # 2. The release version is whatever the merged Claude manifest declares.
+      - name: Resolve version from manifest
+        id: version
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add skills/ dist/ plugins/ \
-            .claude-plugin/ .augment-plugin/ .codex-plugin/ .junie-plugin/ .roo-plugin/ .agents/
-          if git diff --cached --quiet; then
-            echo "No generated changes to commit."
-            echo "committed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          msg="chore: rebuild generated artifacts"
-          if [ -n "${TAG:-}" ]; then
-            msg="chore: rebuild generated artifacts and sync version to ${TAG}"
-          fi
-          git commit -m "${msg} [skip ci]"
-          git push origin main
-          echo "committed=true" >> "$GITHUB_OUTPUT"
+          version="$(jq -r '.version' .claude-plugin/plugin.json)"
+          [ -n "$version" ] && [ "$version" != "null" ] || {
+            echo "::error::Could not read .version from .claude-plugin/plugin.json"
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Release version: v$version"
 
-      # 6. Tag the local HEAD of main, which now contains the freshly generated
-      #    artifacts. We tag explicitly with git (rather than re-running the tag
-      #    action) because the action tags GITHUB_SHA — the original triggering
-      #    commit — which would miss the artifact commit pushed in step 5.
-      - name: Create and push release tag
-        if: steps.version.outputs.new_tag != ''
+      - name: Check whether tag already exists
+        id: existing
         env:
-          TAG: ${{ steps.version.outputs.new_tag }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          git tag -a "$TAG" -m "$TAG"
-          git push origin "$TAG"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists — nothing to release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 3. Package each agent's marketplace bundle as a release asset. The repo
+      #    tree remains the primary distribution (the marketplace installs from
+      #    ./plugins/<agent>/); these archives are a convenience for direct
+      #    downloads and pinning to a tag.
+      - name: Package plugin bundles
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          for agent in claude codex augment junie roo; do
+            src="plugins/${agent}/spec-driven-development"
+            [ -d "$src" ] || { echo "::error::missing bundle: $src"; exit 1; }
+            tar -czf "release-assets/sdd-${agent}-v${VERSION}.tar.gz" \
+              -C "plugins/${agent}" spec-driven-development
+          done
+          ls -l release-assets
+
+      - name: Create GitHub Release
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" release-assets/*.tar.gz \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes
